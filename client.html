@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.0.3/socket.io.js"></script>
+    <style type="text/css">
+        .screen{
+            width: 300px;
+            height: 510px;
+
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px solid;
+        }
+
+        #mask{
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 30px;
+            height: 51px;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="screen">
+      <video autoplay="true" id="video"></video>
+      <canvas id="canvas" style="overflow:auto"></canvas>      
+    </div>
+
+    <button class="capture">CAPTURE</button>
+  <img src="" id="mask">
+</body>
+</html>
+
+<script>
+    const video = document.querySelector("#video");
+    const mask = document.querySelector("#mask");
+    const capture = document.querySelector(".capture");
+
+    const PORT = 8000
+    const HOST = "localhost"
+    const NAME_SPACE = "/asset"
+    const MESSAGE_FROM_CLIENT = "book_rec"
+    const MESSAGE_TO_CLIENT = "book_rec_results"
+
+    const VIDEO_WIDTH = 300;
+    const VIDEO_HEIGHT = 510;
+
+    const FPS = 1;
+
+    let processing = false;
+
+    navigator.mediaDevices
+        .getUserMedia({
+            video: {
+                width: VIDEO_WIDTH, 
+                height: VIDEO_HEIGHT
+            },
+            audio: false
+        })
+        .then((stream) => {
+            video.srcObject = stream;
+            console.log(stream)
+        });
+
+    const getFrame = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        return canvas.toDataURL('image/png');
+    }
+
+    const cleanupBase64 = (dataUrlBase64) => {
+      return dataUrlBase64.replace(/^data:image\/(png|jpg);base64,/, "");
+    };
+
+    async function start(){
+
+        const wsUrl = `http://${HOST}:${PORT}${NAME_SPACE}`;
+
+        const socket = io.connect(wsUrl, { 
+            transports: ['websocket'],
+            reconnection: false
+        });
+
+        socket.on('connect', () => {
+            console.log('Connected');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected');
+        });
+
+        socket.on('connect_error', (error) => {
+            console.log('Connect error! ' + error);
+        });
+
+        socket.on('connect_timeout', (error) => {
+            console.log('Connect timeout! ' + error);
+        });
+
+        socket.on('error', (error) => {
+            console.log('Error! ' + error);
+        });
+      
+        socket.on(MESSAGE_TO_CLIENT, (msg) => {
+            console.log("MESSAGE_TO_CLIENT");
+            console.log(msg);
+            processing = false;
+            document.body.classList.remove("processing");
+            video.play();
+            // msg.masks.forEach((mask) => {
+            //     const img = new Image();
+            //     img.src = `data:image/png;base64, ${mask}`;
+            //     img.style.width = VIDEO_WIDTH*0.2 + "px";
+            //     img.style.height = VIDEO_HEIGHT*0.2 + "px";
+            //     img.style.float = "left";
+            //     document.body.append(img);
+            // })
+        });
+
+        socket.on('info', console.log);
+
+        const captureCurrentFrameAndSend = () => {
+            processing = true;
+            document.body.classList.add("processing");
+            video.pause();
+            const frame = getFrame();
+            mask.src = frame;
+            socket.emit(MESSAGE_FROM_CLIENT, cleanupBase64(frame));
+        }
+
+        capture.onclick = () => {
+            if(processing) return;
+            captureCurrentFrameAndSend();
+        }
+    }
+    document.addEventListener("DOMContentLoaded", start);
+</script>
